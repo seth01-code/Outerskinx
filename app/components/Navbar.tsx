@@ -468,17 +468,25 @@ export default function Navbar() {
                   border: "1px solid var(--border)",
                 }}
               >
-                <span
-                  className="w-8 h-8 rounded-full flex items-center justify-center font-bold shrink-0"
-                  style={{
-                    background: "var(--brand-green)",
-                    color: "#fff",
-                    fontFamily: "var(--font-syne)",
-                    fontSize: "0.75rem",
-                  }}
-                >
-                  {session.email.charAt(0).toUpperCase()}
-                </span>
+                {session.profileImage ? (
+                  <img
+                    src={session.profileImage}
+                    alt={session.email}
+                    className="w-5 h-5 rounded-full object-cover"
+                  />
+                ) : (
+                  <span
+                    className="w-5 h-5 rounded-full flex items-center justify-center font-bold"
+                    style={{
+                      background: "var(--brand-green)",
+                      color: "#fff",
+                      fontFamily: "var(--font-syne)",
+                      fontSize: "0.6rem",
+                    }}
+                  >
+                    {session.email.charAt(0).toUpperCase()}
+                  </span>
+                )}
                 <div className="min-w-0">
                   <p
                     className="text-xs font-medium truncate"
