@@ -5,7 +5,7 @@
  *         Returns { cbjNumber, dispatchConfirmationNumber }
  *
  * DELETE – cancel an existing DHL pickup
- *          Body: { cbjNumber, requestorName?, reason? }
+ *          Body: { cbjNumber, orderId?, requestorName?, reason? }
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -21,8 +21,14 @@ function getCredentials() {
   ).toString("base64");
 }
 
-// ─── POST: Create pickup ──────────────────────────────────────────────────────
+// ─── Structured logger ────────────────────────────────────────────────────────
+function log(level: "INFO" | "WARN" | "ERROR", tag: string, data: object) {
+  const entry = JSON.stringify({ ts: new Date().toISOString(), level, tag, ...data });
+  if (level === "ERROR") console.error(entry);
+  else console.log(entry);
+}
 
+// ─── POST: Create pickup ──────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
@@ -31,16 +37,21 @@ export async function POST(req: NextRequest) {
     }
 
     const { orderId } = await req.json();
+    log("INFO", "pickup/create:start", { orderId });
+
     if (!orderId)
       return NextResponse.json({ error: "orderId required" }, { status: 400 });
 
     await connectDB();
-
     const order = await Order.findById(orderId);
-    if (!order)
+
+    if (!order) {
+      log("WARN", "pickup/create:not_found", { orderId });
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    }
 
     if (!order.dhl?.trackingNumber) {
+      log("WARN", "pickup/create:no_tracking", { orderId });
       return NextResponse.json(
         { error: "Shipment must be created before requesting pickup" },
         { status: 400 },
@@ -48,6 +59,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (order.dhl?.pickupConfirmationNumber) {
+      log("WARN", "pickup/create:already_exists", {
+        orderId,
+        cbjNumber: order.dhl.pickupConfirmationNumber,
+      });
       return NextResponse.json(
         {
           error: "Pickup already requested",
@@ -73,6 +88,11 @@ export async function POST(req: NextRequest) {
     const productCode = intl ? "P" : "N";
     const accountNumber = process.env.DHL_ACCOUNT_NUMBER_EXP;
 
+    // ✅ FIX 1: Date format — no space/timezone suffix, just ISO local time
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const plannedPickupDateAndTime = `${tomorrow.toISOString().split("T")[0]}T10:00:00`;
+
     const totalWeightKg = Math.max(
       0.5,
       order.items.reduce(
@@ -82,10 +102,17 @@ export async function POST(req: NextRequest) {
       ),
     );
 
-    // Pickup date: next business day, 10:00 WAT
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const plannedPickupDateAndTime = `${tomorrow.toISOString().split("T")[0]}T10:00:00 GMT+01:00`;
+    // ✅ FIX 2: receiverDetails must use the actual customer delivery address,
+    //    NOT a copy of shipperDetails. Mirroring shipper causes DHL validation errors.
+    const receiverAddress = order.deliveryAddress;
+    const receiverContact = order.buyer;
+
+    // ✅ FIX 3: declaredValueCurrency should reflect destination, not NGN
+    const currencyMap: Record<string, string> = {
+      US: "USD", GB: "GBP", DE: "EUR", FR: "EUR", CA: "CAD",
+      GH: "GHS", KE: "KES", ZA: "ZAR", AE: "AED", NG: "NGN",
+    };
+    const declaredCurrency = currencyMap[receiverCountry] || "USD";
 
     const pickupBody = {
       plannedPickupDateAndTime,
@@ -112,20 +139,20 @@ export async function POST(req: NextRequest) {
             phone: "+2348012345678",
           },
         },
-        // receiverDetails mirrors shipper for pickup requests (required by DHL)
+        // ✅ FIX 2: Actual receiver details from the order
         receiverDetails: {
           postalAddress: {
-            addressLine1: "OuterSkinX Warehouse, 1 Commerce Road",
-            postalCode: "100001",
-            cityName: "Lagos",
-            countyName: "Lagos",
-            countryCode: "NG",
+            addressLine1: receiverAddress?.street || receiverAddress?.addressLine1 || "N/A",
+            postalCode: receiverAddress?.postalCode || "N/A",
+            cityName: receiverAddress?.city || "N/A",
+            countyName: receiverAddress?.state || receiverAddress?.city || "N/A",
+            countryCode: receiverCountry,
           },
           contactInformation: {
-            fullName: "OuterSkinX Operations",
-            companyName: "OuterSkinX",
-            email: "operations@outerskinx.com",
-            phone: "+2348012345678",
+            fullName: receiverContact?.businessName || receiverContact?.fullName || "N/A",
+            companyName: receiverContact?.businessName || "N/A",
+            email: receiverContact?.email || "N/A",
+            phone: receiverContact?.phone || "+2340000000000",
           },
         },
       },
@@ -142,7 +169,8 @@ export async function POST(req: NextRequest) {
                 0,
               ),
             ),
-            declaredValueCurrency: "NGN",
+            // ✅ FIX 3: Use destination currency, not NGN
+            declaredValueCurrency: declaredCurrency,
           }),
           unitOfMeasurement: "metric",
           packages: [
@@ -155,7 +183,17 @@ export async function POST(req: NextRequest) {
       ],
     };
 
-    console.log("DHL pickup request:", JSON.stringify(pickupBody, null, 2));
+    log("INFO", "pickup/create:request", {
+      orderId,
+      trackingNumber: order.dhl.trackingNumber,
+      productCode,
+      intl,
+      receiverCountry,
+      declaredCurrency,
+      plannedPickupDateAndTime,
+      totalWeightKg,
+      payload: pickupBody,
+    });
 
     const res = await fetch(`${DHL_BASE}/pickups`, {
       method: "POST",
@@ -168,8 +206,14 @@ export async function POST(req: NextRequest) {
 
     const data = await res.json();
 
+    log(res.ok ? "INFO" : "ERROR", "pickup/create:dhl_response", {
+      orderId,
+      status: res.status,
+      ok: res.ok,
+      response: data,
+    });
+
     if (!res.ok) {
-      console.error("DHL pickup error:", JSON.stringify(data, null, 2));
       return NextResponse.json(
         {
           error: data?.detail || data?.message || "DHL pickup creation failed",
@@ -179,8 +223,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // DHL returns dispatchConfirmationNumber — this is the CBJ number
-    // e.g. "CBJ251027000281"
     const cbjNumber: string = data.dispatchConfirmationNumber;
 
     await Order.findByIdAndUpdate(orderId, {
@@ -190,21 +232,22 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    log("INFO", "pickup/create:success", { orderId, cbjNumber });
+
     return NextResponse.json({
       cbjNumber,
       dispatchConfirmationNumber: cbjNumber,
     });
   } catch (error) {
-    console.error("Pickup creation error:", error);
-    return NextResponse.json(
-      { error: "Something went wrong" },
-      { status: 500 },
-    );
+    log("ERROR", "pickup/create:exception", {
+      message: (error as Error).message,
+      stack: (error as Error).stack,
+    });
+    return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
   }
 }
 
 // ─── DELETE: Cancel pickup ────────────────────────────────────────────────────
-
 export async function DELETE(req: NextRequest) {
   try {
     const session = await getSession();
@@ -212,14 +255,17 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { cbjNumber, orderId, requestorName = "OuterSkinX Operations", reason = "No longer required" } =
-      await req.json();
+    const {
+      cbjNumber,
+      orderId,
+      requestorName = "OuterSkinX Operations",
+      reason = "No longer required",
+    } = await req.json();
+
+    log("INFO", "pickup/cancel:start", { cbjNumber, orderId, requestorName, reason });
 
     if (!cbjNumber)
-      return NextResponse.json(
-        { error: "cbjNumber required" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "cbjNumber required" }, { status: 400 });
 
     const params = new URLSearchParams({ requestorName, reason });
     const res = await fetch(`${DHL_BASE}/pickups/${cbjNumber}?${params}`, {
@@ -229,15 +275,27 @@ export async function DELETE(req: NextRequest) {
       },
     });
 
+    const responseText = await res.text();
+    let data: object = {};
+    try { data = JSON.parse(responseText); } catch { data = { raw: responseText }; }
+
+    log(res.ok ? "INFO" : "ERROR", "pickup/cancel:dhl_response", {
+      cbjNumber,
+      status: res.status,
+      ok: res.ok,
+      response: data,
+    });
+
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
       return NextResponse.json(
-        { error: data?.detail || data?.message || "Pickup cancellation failed", dhlError: data },
+        {
+          error: (data as any)?.detail || (data as any)?.message || "Pickup cancellation failed",
+          dhlError: data,
+        },
         { status: 502 },
       );
     }
 
-    // Clear the pickup number from the order if orderId provided
     if (orderId) {
       await connectDB();
       await Order.findByIdAndUpdate(orderId, {
@@ -246,14 +304,15 @@ export async function DELETE(req: NextRequest) {
           "dhl.pickupCreatedAt": "",
         },
       });
+      log("INFO", "pickup/cancel:db_cleared", { orderId, cbjNumber });
     }
 
     return NextResponse.json({ success: true, cbjNumber });
   } catch (error) {
-    console.error("Pickup cancellation error:", error);
-    return NextResponse.json(
-      { error: "Something went wrong" },
-      { status: 500 },
-    );
+    log("ERROR", "pickup/cancel:exception", {
+      message: (error as Error).message,
+      stack: (error as Error).stack,
+    });
+    return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
   }
 }
