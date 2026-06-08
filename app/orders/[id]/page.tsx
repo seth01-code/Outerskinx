@@ -403,17 +403,24 @@ export default function OrderDetailPage({
                       </span>
                     </div>
                   )}
-                  {order.dhl.labelUrl && (
-                    <a
-                      href={order.dhl.labelUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn-ghost w-full justify-center mt-3 text-xs"
-                      style={{ padding: "8px 16px" }}
-                    >
-                      Download shipping label
-                    </a>
-                  )}
+                  <a
+                    href={`/api/orders/${order._id}/invoice`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-ghost w-full justify-center mt-3 text-xs"
+                    style={{ padding: "8px 16px" }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    Download invoice
+                  </a>
                 </div>
               </div>
             )}

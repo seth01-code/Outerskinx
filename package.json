@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@react-pdf/renderer": "^4.5.1",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.10.0",
     "crypto": "^1.0.1",

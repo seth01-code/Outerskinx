@@ -12,6 +12,9 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "res.cloudinary.com" },
     ],
   },
+   experimental: {
+    serverComponentsExternalPackages: ["@react-pdf/renderer"],
+  },
 }
 
 export default nextConfig
