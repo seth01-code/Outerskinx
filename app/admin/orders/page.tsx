@@ -49,6 +49,7 @@ export default function AdminOrdersPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [trackingData, setTrackingData] = useState<Record<string, { events: TrackingEvent[]; status: string; loading: boolean }>>({})
   const [shipmentErrors, setShipmentErrors] = useState<Record<string, string>>({})
+  const [pickupErrors, setPickupErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
     fetch("/api/admin/orders")
@@ -71,14 +72,13 @@ export default function AdminOrdersPage() {
   }
 
   async function createShipment(orderId: string) {
-    const withPickup = requestingPickup[orderId] ?? false
     setCreatingShipment(orderId)
     setShipmentErrors((p) => ({ ...p, [orderId]: "" }))
     try {
       const res = await fetch("/api/shipping/shipment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId, requestPickup: withPickup }),
+        body: JSON.stringify({ orderId }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -94,7 +94,6 @@ export default function AdminOrdersPage() {
                 trackingNumber: data.trackingNumber,
                 shipmentId: data.shipmentId,
                 labelUrl: data.labelUrl,
-                pickupConfirmationNumber: data.pickupConfirmationNumber,
               },
             }
           : o
@@ -103,6 +102,33 @@ export default function AdminOrdersPage() {
       setShipmentErrors((p) => ({ ...p, [orderId]: "Something went wrong" }))
     } finally {
       setCreatingShipment(null)
+    }
+  }
+
+  async function requestPickup(orderId: string) {
+    setRequestingPickup((p) => ({ ...p, [orderId]: true }))
+    setPickupErrors((p) => ({ ...p, [orderId]: "" }))
+    try {
+      const res = await fetch("/api/shipping/pickup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setPickupErrors((p) => ({ ...p, [orderId]: data.error || "Pickup request failed" }))
+        return
+      }
+      // Update order with CBJ number from pickup response
+      setOrders((prev) => prev.map((o) =>
+        o._id === orderId
+          ? { ...o, dhl: { ...o.dhl, pickupConfirmationNumber: data.cbjNumber } }
+          : o
+      ))
+    } catch {
+      setPickupErrors((p) => ({ ...p, [orderId]: "Something went wrong" }))
+    } finally {
+      setRequestingPickup((p) => ({ ...p, [orderId]: false }))
     }
   }
 
@@ -178,11 +204,13 @@ export default function AdminOrdersPage() {
             const isExpanded = expanded === order._id
             const tracking = trackingData[order._id]
             const shipmentErr = shipmentErrors[order._id]
+            const pickupErr = pickupErrors[order._id]
             const isApproved = APPROVED_STATUSES.includes(order.status)
             const isShipped = ["shipped", "delivered"].includes(order.status)
             const isCancelled = order.status === "cancelled"
             const isDelivered = order.status === "delivered"
-            const withPickup = requestingPickup[order._id] ?? false
+            const isPickupPending = requestingPickup[order._id] ?? false
+            const hasCBJ = !!order.dhl?.pickupConfirmationNumber
 
             return (
               <div
@@ -219,8 +247,9 @@ export default function AdminOrdersPage() {
                             fontSize: "0.65rem", fontFamily: "var(--font-dm-mono)",
                             color: "#60a5fa", background: "rgba(96,165,250,0.08)",
                             padding: "2px 7px", borderRadius: 6,
+                            border: "1px solid rgba(96,165,250,0.2)",
                           }}>
-                            Pickup confirmed
+                            CBJ: {order.dhl.pickupConfirmationNumber}
                           </span>
                         )}
                       </div>
@@ -278,65 +307,72 @@ export default function AdminOrdersPage() {
                           </button>
                         )}
 
-                        {/* Create DHL shipment — with pickup toggle */}
+                        {/* Create DHL shipment */}
                         {order.status === "processing" && !order.dhl?.trackingNumber && (
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <button
-                              onClick={() => createShipment(order._id)}
-                              disabled={creatingShipment === order._id}
-                              style={{
-                                padding: "7px 16px", borderRadius: 8, border: "none",
-                                background: "#1a6bff", color: "#fff",
-                                fontFamily: "var(--font-dm-mono)", fontSize: "0.78rem", fontWeight: 600,
-                                cursor: creatingShipment === order._id ? "not-allowed" : "pointer",
-                                opacity: creatingShipment === order._id ? 0.6 : 1,
-                                display: "flex", alignItems: "center", gap: 6,
-                              }}
-                            >
-                              {creatingShipment === order._id ? (
-                                <>
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                                    style={{ animation: "spin 1s linear infinite" }}>
-                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="12" />
-                                  </svg>
-                                  {withPickup ? "Creating shipment + pickup…" : "Creating shipment…"}
-                                </>
-                              ) : (
-                                <>
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                                    <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                  </svg>
-                                  Create DHL shipment
-                                </>
-                              )}
-                            </button>
+                          <button
+                            onClick={() => createShipment(order._id)}
+                            disabled={creatingShipment === order._id}
+                            style={{
+                              padding: "7px 16px", borderRadius: 8, border: "none",
+                              background: "#1a6bff", color: "#fff",
+                              fontFamily: "var(--font-dm-mono)", fontSize: "0.78rem", fontWeight: 600,
+                              cursor: creatingShipment === order._id ? "not-allowed" : "pointer",
+                              opacity: creatingShipment === order._id ? 0.6 : 1,
+                              display: "flex", alignItems: "center", gap: 6,
+                            }}
+                          >
+                            {creatingShipment === order._id ? (
+                              <>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                  style={{ animation: "spin 1s linear infinite" }}>
+                                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="12" />
+                                </svg>
+                                Creating shipment…
+                              </>
+                            ) : (
+                              <>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                                  <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                </svg>
+                                Create DHL shipment
+                              </>
+                            )}
+                          </button>
+                        )}
 
-                            {/* Pickup toggle */}
-                            <label
-                              className="flex items-center gap-1.5 cursor-pointer select-none"
-                              style={{ fontSize: "0.72rem", fontFamily: "var(--font-dm-mono)", color: "var(--foreground-subtle)" }}
-                            >
-                              <div
-                                onClick={() =>
-                                  setRequestingPickup((p) => ({ ...p, [order._id]: !p[order._id] }))
-                                }
-                                style={{
-                                  width: 28, height: 16, borderRadius: 8,
-                                  background: withPickup ? "#1a6bff" : "var(--border)",
-                                  position: "relative", transition: "background 0.2s",
-                                  cursor: "pointer", flexShrink: 0,
-                                }}
-                              >
-                                <span style={{
-                                  position: "absolute", top: 2,
-                                  left: withPickup ? 14 : 2,
-                                  width: 12, height: 12, borderRadius: "50%",
-                                  background: "#fff", transition: "left 0.2s",
-                                }} />
-                              </div>
-                              Request pickup
-                            </label>
-                          </div>
+                        {/* Request pickup — only available after shipment is created, and not already requested */}
+                        {order.dhl?.trackingNumber && !hasCBJ && (
+                          <button
+                            onClick={() => requestPickup(order._id)}
+                            disabled={isPickupPending}
+                            style={{
+                              padding: "7px 16px", borderRadius: 8,
+                              border: "1px solid rgba(96,165,250,0.3)",
+                              background: "rgba(96,165,250,0.08)", color: "#60a5fa",
+                              fontFamily: "var(--font-dm-mono)", fontSize: "0.78rem", fontWeight: 600,
+                              cursor: isPickupPending ? "not-allowed" : "pointer",
+                              opacity: isPickupPending ? 0.6 : 1,
+                              display: "flex", alignItems: "center", gap: 6,
+                            }}
+                          >
+                            {isPickupPending ? (
+                              <>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                  style={{ animation: "spin 1s linear infinite" }}>
+                                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="12" />
+                                </svg>
+                                Requesting pickup…
+                              </>
+                            ) : (
+                              <>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                                  <path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11a2 2 0 012 2v3" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+                                  <path d="M21 11l-8 8-4-4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                                Request DHL pickup
+                              </>
+                            )}
+                          </button>
                         )}
 
                         {/* Mark delivered */}
@@ -375,6 +411,14 @@ export default function AdminOrdersPage() {
                             Cancel order
                           </button>
                         )}
+                      </div>
+                    )}
+
+                    {/* Pickup error */}
+                    {pickupErr && (
+                      <div className="px-4 py-3 rounded-xl text-sm"
+                        style={{ background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid rgba(248,113,113,0.15)" }}>
+                        Pickup error: {pickupErr}
                       </div>
                     )}
 
@@ -420,8 +464,8 @@ export default function AdminOrdersPage() {
                           </div>
                         )}
 
-                        {/* Tracking number + pickup confirmation */}
-                        <div className="grid gap-3" style={{ gridTemplateColumns: order.dhl?.pickupConfirmationNumber ? "1fr 1fr" : "1fr" }}>
+                        {/* Tracking number + CBJ number */}
+                        <div className="grid gap-3" style={{ gridTemplateColumns: hasCBJ ? "1fr 1fr" : "1fr" }}>
                           <div>
                             <p style={{ fontSize: "0.65rem", color: "var(--foreground-subtle)", fontFamily: "var(--font-dm-mono)", marginBottom: 3, letterSpacing: "0.06em", textTransform: "uppercase" }}>
                               Tracking number
@@ -430,13 +474,13 @@ export default function AdminOrdersPage() {
                               {order.dhl?.trackingNumber}
                             </p>
                           </div>
-                          {order.dhl?.pickupConfirmationNumber && (
+                          {hasCBJ && (
                             <div>
                               <p style={{ fontSize: "0.65rem", color: "var(--foreground-subtle)", fontFamily: "var(--font-dm-mono)", marginBottom: 3, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                                Pickup confirmation
+                                Pickup CBJ number
                               </p>
                               <p style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.85rem", color: "#60a5fa", fontWeight: 600 }}>
-                                {order.dhl.pickupConfirmationNumber}
+                                {order.dhl?.pickupConfirmationNumber}
                               </p>
                             </div>
                           )}

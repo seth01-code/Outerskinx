@@ -32,88 +32,6 @@ function getCredentials() {
   ).toString("base64");
 }
 
-async function createPickup(
-  plannedShippingDateAndTime: string,
-  accountNumber: string | undefined,
-  productCode: string,
-  totalWeightKg: number,
-  isCustomsDeclarable: boolean,
-) {
-  const pickupBody = {
-    plannedPickupDateAndTime: plannedShippingDateAndTime,
-    closeTime: "17:00",
-    location: "reception",
-    locationType: "business",
-    accounts: [{ number: accountNumber, typeCode: "shipper" }],
-    specialInstructions: [{ value: "Handle with care", typeCode: "TBD" }],
-    customerDetails: {
-      shipperDetails: {
-        postalAddress: {
-          addressLine1: "OuterSkinX Warehouse, 1 Commerce Road",
-          postalCode: "100001",
-          cityName: "Lagos",
-          countyName: "Lagos",
-          countryCode: "NG",
-        },
-        contactInformation: {
-          fullName: "OuterSkinX Operations",
-          companyName: "OuterSkinX",
-          email: "operations@outerskinx.com",
-          phone: "+2348012345678",
-        },
-      },
-      // receiverDetails is required by the API even for pickup requests
-      receiverDetails: {
-        postalAddress: {
-          addressLine1: "Pickup Origin",
-          postalCode: "100001",
-          cityName: "Lagos",
-          countyName: "Lagos",
-          countryCode: "NG",
-        },
-        contactInformation: {
-          fullName: "OuterSkinX Operations",
-          companyName: "OuterSkinX",
-          email: "operations@outerskinx.com",
-          phone: "+2348012345678",
-        },
-      },
-    },
-    shipmentDetails: [
-      {
-        productCode,
-        isCustomsDeclarable,
-        unitOfMeasurement: "metric",
-        packages: [
-          {
-            weight: totalWeightKg,
-            dimensions: { length: 30, width: 30, height: 30 },
-          },
-        ],
-      },
-    ],
-  };
-
-  const res = await fetch(`${DHL_BASE}/pickups`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${getCredentials()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(pickupBody),
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    console.warn(
-      "DHL pickup creation failed (non-fatal):",
-      JSON.stringify(data, null, 2),
-    );
-    return null;
-  }
-  return data;
-}
-
 export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
@@ -121,7 +39,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orderId, requestPickup = false } = await req.json();
+    const { orderId } = await req.json();
     if (!orderId)
       return NextResponse.json({ error: "orderId required" }, { status: 400 });
 
@@ -137,8 +55,9 @@ export async function POST(req: NextRequest) {
 
     const receiverCountry = getCountryCode(order.deliveryAddress.country);
     const intl = receiverCountry !== "NG";
-const productCode = intl ? "P" : "N"
-const accountNumber = process.env.DHL_ACCOUNT_NUMBER_EXP  // EXP account covers ALL outbound from NG  // domestic account for NG→NG
+    const productCode = intl ? "P" : "N";
+    // EXP account covers all outbound shipments from NG (both domestic and international)
+    const accountNumber = process.env.DHL_ACCOUNT_NUMBER_EXP;
 
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -174,7 +93,6 @@ const accountNumber = process.env.DHL_ACCOUNT_NUMBER_EXP  // EXP account covers 
         : []),
     ];
 
-    // Declared value must equal sum of line item prices per DHL docs
     const lineItemsTotal = order.items.reduce(
       (sum: number, i: { qty: number; unitPrice: number }) =>
         sum + i.unitPrice * i.qty,
@@ -204,8 +122,6 @@ const accountNumber = process.env.DHL_ACCOUNT_NUMBER_EXP  // EXP account covers 
 
     if (intl) {
       const shippingPrice = order.shipping?.price || 0;
-
-      // FIX: additionalCharges value must be >= 0.001 — omit entirely if zero
       const additionalCharges =
         shippingPrice >= 0.001
           ? [{ value: shippingPrice, typeCode: "freight" }]
@@ -228,17 +144,16 @@ const accountNumber = process.env.DHL_ACCOUNT_NUMBER_EXP  // EXP account covers 
               qty: number;
               unitPrice: number;
               weightG?: number;
+              hsCode?: string;
+              customsDescription?: string;
             },
             idx: number,
           ) => ({
             number: idx + 1,
             quantity: { unitOfMeasurement: "PCS", value: item.qty },
             price: item.unitPrice,
-            description:
-              `${item.name}, topical skincare, manufactured in Nigeria`.slice(
-                0,
-                80,
-              ),
+            // Use product-specific customs description and HS code if set on the product
+            description: (item.customsDescription || item.name).slice(0, 80),
             weight: {
               netValue: Math.max(
                 0.1,
@@ -250,8 +165,8 @@ const accountNumber = process.env.DHL_ACCOUNT_NUMBER_EXP  // EXP account covers 
               ),
             },
             commodityCodes: [
-              { typeCode: "inbound", value: "33049900" },
-              { typeCode: "outbound", value: "33049900" },
+              { typeCode: "inbound", value: item.hsCode || "33049900" },
+              { typeCode: "outbound", value: item.hsCode || "33049900" },
             ],
             exportReasonType: "permanent",
             manufacturerCountry: "NG",
@@ -263,7 +178,8 @@ const accountNumber = process.env.DHL_ACCOUNT_NUMBER_EXP  // EXP account covers 
     const requestBody = {
       plannedShippingDateAndTime,
       productCode,
-      pickup: { isRequested: false }, // pickup created separately below if requested
+      // pickup.isRequested is ALWAYS false here — pickup is a separate API call via /api/shipping/pickup
+      pickup: { isRequested: false },
       outputImageProperties: {
         allDocumentsInOneImage: true,
         encodingFormat: "pdf",
@@ -340,19 +256,6 @@ const accountNumber = process.env.DHL_ACCOUNT_NUMBER_EXP  // EXP account covers 
       ? `data:application/pdf;base64,${labelContent}`
       : null;
 
-    // Optionally create a pickup request after successful shipment
-    let pickupConfirmationNumber: string | null = null;
-    if (requestPickup) {
-      const pickupData = await createPickup(
-        plannedShippingDateAndTime,
-        accountNumber,
-        productCode,
-        totalWeightKg,
-        intl,
-      );
-      pickupConfirmationNumber = pickupData?.dispatchConfirmationNumber || null;
-    }
-
     await Order.findByIdAndUpdate(orderId, {
       $set: {
         status: "shipped",
@@ -360,9 +263,6 @@ const accountNumber = process.env.DHL_ACCOUNT_NUMBER_EXP  // EXP account covers 
         "dhl.shipmentId": shipmentId,
         "dhl.labelUrl": labelUrl,
         "dhl.createdAt": new Date(),
-        ...(pickupConfirmationNumber && {
-          "dhl.pickupConfirmationNumber": pickupConfirmationNumber,
-        }),
       },
     });
 
@@ -370,7 +270,6 @@ const accountNumber = process.env.DHL_ACCOUNT_NUMBER_EXP  // EXP account covers 
       trackingNumber,
       shipmentId,
       labelUrl,
-      ...(pickupConfirmationNumber && { pickupConfirmationNumber }),
     });
   } catch (error) {
     console.error("Shipment error:", error);
