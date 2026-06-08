@@ -19,6 +19,7 @@ export async function createSession(payload: {
   role: "buyer" | "admin"
   tier?: string
   status?: string
+  profileImage?: string
 }) {
   const token = await new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
@@ -44,12 +45,13 @@ export async function getSession() {
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET)
     return payload as {
-      id: string
-      email: string
-      role: "buyer" | "admin"
-      tier?: string
-      status?: string
-    }
+  id: string
+  email: string
+  role: "buyer" | "admin"
+  tier?: string
+  status?: string
+  profileImage?: string
+}
   } catch {
     return null
   }
