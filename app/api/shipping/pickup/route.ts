@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
     if (!orderId)
       return NextResponse.json({ error: "orderId required" }, { status: 400 });
 
+    // ── Connect and fetch order ──
     await connectDB();
     const order = await Order.findById(orderId);
 
@@ -217,7 +218,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ✅ FIX: DHL returns an array "dispatchConfirmationNumbers", not a single string
     const cbjNumber: string =
       data.dispatchConfirmationNumber ||
       data.dispatchConfirmationNumbers?.[0];
@@ -230,11 +230,42 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await Order.findByIdAndUpdate(orderId, {
-      $set: {
-        "dhl.pickupConfirmationNumber": cbjNumber,
-        "dhl.pickupCreatedAt": new Date(),
+    // ── Re-connect before DB write (connection may have timed out during DHL call) ──
+    await connectDB();
+
+    const updated = await Order.findByIdAndUpdate(
+      orderId,
+      {
+        $set: {
+          "dhl.pickupConfirmationNumber": cbjNumber,
+          "dhl.pickupCreatedAt": new Date(),
+        },
       },
+      { new: true },
+    );
+
+    if (!updated) {
+      log("ERROR", "pickup/create:db_update_failed", {
+        orderId,
+        cbjNumber,
+        reason: "findByIdAndUpdate returned null — order may not exist or ID mismatch",
+      });
+      // Still return the CBJ number to the client so the admin can note it,
+      // but flag that the DB save failed.
+      return NextResponse.json(
+        {
+          cbjNumber,
+          dispatchConfirmationNumber: cbjNumber,
+          warning: "Pickup confirmed by DHL but failed to save to database. Please record CBJ number manually.",
+        },
+        { status: 207 },
+      );
+    }
+
+    log("INFO", "pickup/create:db_saved", {
+      orderId,
+      cbjNumber,
+      savedValue: updated.dhl?.pickupConfirmationNumber,
     });
 
     log("INFO", "pickup/create:success", { orderId, cbjNumber });
@@ -303,13 +334,26 @@ export async function DELETE(req: NextRequest) {
 
     if (orderId) {
       await connectDB();
-      await Order.findByIdAndUpdate(orderId, {
-        $unset: {
-          "dhl.pickupConfirmationNumber": "",
-          "dhl.pickupCreatedAt": "",
+      const cleared = await Order.findByIdAndUpdate(
+        orderId,
+        {
+          $unset: {
+            "dhl.pickupConfirmationNumber": "",
+            "dhl.pickupCreatedAt": "",
+          },
         },
-      });
-      log("INFO", "pickup/cancel:db_cleared", { orderId, cbjNumber });
+        { new: true },
+      );
+
+      if (!cleared) {
+        log("WARN", "pickup/cancel:db_clear_failed", {
+          orderId,
+          cbjNumber,
+          reason: "findByIdAndUpdate returned null",
+        });
+      } else {
+        log("INFO", "pickup/cancel:db_cleared", { orderId, cbjNumber });
+      }
     }
 
     return NextResponse.json({ success: true, cbjNumber });
