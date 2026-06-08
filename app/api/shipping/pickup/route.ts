@@ -1,13 +1,3 @@
-/**
- * /api/shipping/pickup
- *
- * POST  – create a DHL pickup request for an already-shipped order
- *         Returns { cbjNumber, dispatchConfirmationNumber }
- *
- * DELETE – cancel an existing DHL pickup
- *          Body: { cbjNumber, orderId?, requestorName?, reason? }
- */
-
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "../../../lib/mongodb";
 import Order from "../../../models/WholesaleOrder";
