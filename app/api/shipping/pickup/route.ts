@@ -88,7 +88,6 @@ export async function POST(req: NextRequest) {
     const productCode = intl ? "P" : "N";
     const accountNumber = process.env.DHL_ACCOUNT_NUMBER_EXP;
 
-    // ✅ FIX 1: Date format — no space/timezone suffix, just ISO local time
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const plannedPickupDateAndTime = `${tomorrow.toISOString().split("T")[0]}T10:00:00`;
@@ -102,12 +101,9 @@ export async function POST(req: NextRequest) {
       ),
     );
 
-    // ✅ FIX 2: receiverDetails must use the actual customer delivery address,
-    //    NOT a copy of shipperDetails. Mirroring shipper causes DHL validation errors.
     const receiverAddress = order.deliveryAddress;
     const receiverContact = order.buyer;
 
-    // ✅ FIX 3: declaredValueCurrency should reflect destination, not NGN
     const currencyMap: Record<string, string> = {
       US: "USD", GB: "GBP", DE: "EUR", FR: "EUR", CA: "CAD",
       GH: "GHS", KE: "KES", ZA: "ZAR", AE: "AED", NG: "NGN",
@@ -139,7 +135,6 @@ export async function POST(req: NextRequest) {
             phone: "+2348012345678",
           },
         },
-        // ✅ FIX 2: Actual receiver details from the order
         receiverDetails: {
           postalAddress: {
             addressLine1: receiverAddress?.street || receiverAddress?.addressLine1 || "N/A",
@@ -169,7 +164,6 @@ export async function POST(req: NextRequest) {
                 0,
               ),
             ),
-            // ✅ FIX 3: Use destination currency, not NGN
             declaredValueCurrency: declaredCurrency,
           }),
           unitOfMeasurement: "metric",
@@ -223,7 +217,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const cbjNumber: string = data.dispatchConfirmationNumber;
+    // ✅ FIX: DHL returns an array "dispatchConfirmationNumbers", not a single string
+    const cbjNumber: string =
+      data.dispatchConfirmationNumber ||
+      data.dispatchConfirmationNumbers?.[0];
+
+    if (!cbjNumber) {
+      log("ERROR", "pickup/create:no_cbj", { orderId, response: data });
+      return NextResponse.json(
+        { error: "DHL did not return a confirmation number", dhlResponse: data },
+        { status: 502 },
+      );
+    }
 
     await Order.findByIdAndUpdate(orderId, {
       $set: {
