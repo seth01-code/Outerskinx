@@ -21,6 +21,7 @@ export default function Navbar() {
     role: string;
     email: string;
     status?: string;
+    profileImage?: string;
   } | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
 
@@ -81,8 +82,14 @@ export default function Navbar() {
   const isAdmin = session?.role === "admin";
   const isBuyer = session?.role === "buyer";
 
-  if (isAdmin && isBuyer && ["/admin", "/login", "/register", "/pending-approval", "/suspended"].some(path => pathname.startsWith(path))) return null;
+  if (isAdmin && pathname.startsWith("/admin")) return null;
 
+  if (
+    ["/login", "/register", "/pending-approval", "/suspended"].some((path) =>
+      pathname.startsWith(path),
+    )
+  )
+    return null;
   return (
     <>
       {/* ── Header ─────────────────────────────────────────── */}
@@ -108,8 +115,11 @@ export default function Navbar() {
             <div className="flex items-center justify-between h-[58px]">
               {/* Logo */}
               <Link href="/" className="flex items-center gap-2 shrink-0 group">
-                  <img src="/logo.jpg" alt="OuterSkinX" className="h-12 mt-4 w-auto rounded-lg object-contain" />
-               
+                <img
+                  src="/logo.jpg"
+                  alt="OuterSkinX"
+                  className="h-12 mt-4 w-auto rounded-lg object-contain"
+                />
               </Link>
 
               {/* Desktop nav — centered pill */}
@@ -226,17 +236,25 @@ export default function Navbar() {
                         e.currentTarget.style.color = "var(--foreground-muted)";
                       }}
                     >
-                      <span
-                        className="w-5 h-5 rounded-full flex items-center justify-center font-bold"
-                        style={{
-                          background: "var(--brand-green)",
-                          color: "#fff",
-                          fontFamily: "var(--font-syne)",
-                          fontSize: "0.6rem",
-                        }}
-                      >
-                        {session.email.charAt(0).toUpperCase()}
-                      </span>
+                      {session.profileImage ? (
+                        <img
+                          src={session.profileImage}
+                          alt={session.email}
+                          className="w-5 h-5 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span
+                          className="w-5 h-5 rounded-full flex items-center justify-center font-bold"
+                          style={{
+                            background: "var(--brand-green)",
+                            color: "#fff",
+                            fontFamily: "var(--font-syne)",
+                            fontSize: "0.6rem",
+                          }}
+                        >
+                          {session.email.charAt(0).toUpperCase()}
+                        </span>
+                      )}
                       {session.email.split("@")[0]}
                     </Link>
                     <button
@@ -340,8 +358,11 @@ export default function Navbar() {
           style={{ borderBottom: "1px solid var(--border)" }}
         >
           <Link href="/" className="flex items-center gap-2">
-            <img src="/logo.jpg" alt="OuterSkinX" className="h-12 mt-4 w-auto rounded-lg object-contain" />
-
+            <img
+              src="/logo.jpg"
+              alt="OuterSkinX"
+              className="h-12 mt-4 w-auto rounded-lg object-contain"
+            />
           </Link>
           <button
             onClick={() => setSidebarOpen(false)}
