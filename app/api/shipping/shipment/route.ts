@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
             quantity: { unitOfMeasurement: "PCS", value: item.qty },
             price: item.unitPrice,
             // Use product-specific customs description and HS code if set on the product
-            description: (item.customsDescription || item.name).slice(0, 80),
+            description: (item.customsDescription || item.name).slice(0, 255),
             weight: {
               netValue: Math.max(
                 0.1,
