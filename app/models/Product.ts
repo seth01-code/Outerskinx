@@ -23,6 +23,15 @@ export interface IProduct extends Document {
   stock: number
   inStock: boolean
   weightG?: number
+  // Customs / DHL export fields
+  // Used in exportDeclaration.lineItems when creating international shipments.
+  // hsCode: EU Harmonised System commodity code (6-8 digits).
+  //   See https://tariffnumber.com for lookup.
+  // customsDescription: plain-English description meeting DHL/customs requirements
+  //   (specific material, type, use). E.g. "Vitamin C brightening face serum
+  //   cosmetic preparation for skin care and hyperpigmentation treatment"
+  hsCode?: string
+  customsDescription?: string
   isActive: boolean
   createdAt: Date
   updatedAt: Date
@@ -55,6 +64,8 @@ const ProductSchema = new Schema<IProduct>(
     stock: { type: Number, default: 0 },
     inStock: { type: Boolean, default: false },
     weightG: { type: Number },
+    hsCode: { type: String, trim: true },
+    customsDescription: { type: String, trim: true },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }
