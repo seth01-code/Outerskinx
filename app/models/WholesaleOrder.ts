@@ -7,6 +7,9 @@ export interface IOrderItem {
   qty: number
   unitPrice: number
   subtotal: number
+  weightG: number
+  hsCode: string
+  customsDescription: string
 }
 
 export interface IPaystackDetails {
@@ -39,6 +42,13 @@ export interface IWholesaleOrder extends Document {
   poNumber?: string
   poFileUrl?: string
   invoiceUrl?: string
+  shipping?: {
+    productCode: string
+    productName: string
+    price: number
+    currency: string
+    estimatedDelivery?: string
+  }
   deliveryAddress: {
     street: string
     city: string
@@ -59,6 +69,9 @@ const OrderItemSchema = new Schema<IOrderItem>(
     qty: { type: Number, required: true, min: 1 },
     unitPrice: { type: Number, required: true },
     subtotal: { type: Number, required: true },
+    weightG: { type: Number, default: 500 },
+    hsCode: { type: String, default: "33049900" },
+    customsDescription: { type: String, default: "" },
   },
   { _id: false }
 )
@@ -94,6 +107,13 @@ const WholesaleOrderSchema = new Schema<IWholesaleOrder>(
       estimatedDelivery: { type: Date },
       pickupConfirmationNumber: { type: String },
       pickupCreatedAt: { type: Date },
+    },
+    shipping: {
+      productCode: { type: String },
+      productName: { type: String },
+      price: { type: Number },
+      currency: { type: String },
+      estimatedDelivery: { type: String },
     },
     poNumber: { type: String },
     poFileUrl: { type: String },

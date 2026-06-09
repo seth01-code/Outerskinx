@@ -12,6 +12,8 @@ interface CartItem {
   wholesalePricing: { tier: string; moq: number; price: number }[]
   qty: number
   weightG?: number
+  hsCode?: string
+  customsDescription?: string
 }
 
 interface Address {
@@ -122,13 +124,17 @@ export default function CheckoutPage() {
     setSubmitting(true)
     try {
       const orderItems = items.map((i) => ({
-        product: i._id,
-        sku: i.sku,
-        name: i.name,
-        qty: i.qty,
-        unitPrice: i.retailPrice,
-        subtotal: i.retailPrice * i.qty,
-      }))
+  product: i._id,
+  sku: i.sku,
+  name: i.name,
+  qty: i.qty,
+  unitPrice: i.retailPrice,
+  subtotal: i.retailPrice * i.qty,
+  // Passed through in case the product is deleted between cart and checkout
+  weightG: i.weightG,
+  hsCode: i.hsCode,
+  customsDescription: i.customsDescription,
+}))
 
       const res = await fetch("/api/orders", {
         method: "POST",

@@ -11,19 +11,22 @@ interface WholesaleTier {
 }
 
 interface Product {
-  _id: string;
-  name: string;
-  slug: string;
-  sku: string;
-  images: string[];
-  retailPrice: number;
-  salePrice?: number;
-  inStock: boolean;
-  stock: number;
-  brand: { _id: string; name: string; slug: string };
-  categories: string[];
-  shortDescription?: string;
-  wholesalePricing: WholesaleTier[];
+  _id: string
+  name: string
+  slug: string
+  sku: string
+  images: string[]
+  retailPrice: number
+  salePrice?: number
+  inStock: boolean
+  stock: number
+  brand: { _id: string; name: string; slug: string }
+  categories: string[]
+  shortDescription?: string
+  wholesalePricing: WholesaleTier[]
+  weightG?: number
+  hsCode?: string                        // ← add
+  customsDescription?: string            // ← add
 }
 
 interface BulkItem {
@@ -181,14 +184,17 @@ export default function BulkOrderPage() {
         cart[existing].qty += item.qty;
       } else {
         cart.push({
-          _id: item.product._id,
-          sku: item.product.sku,
-          name: item.product.name,
-          image: item.product.images[0] || "",
-          retailPrice: item.product.retailPrice,
-          wholesalePricing: item.product.wholesalePricing,
-          qty: item.qty,
-        });
+  _id: item.product._id,
+  sku: item.product.sku,
+  name: item.product.name,
+  image: item.product.images[0] || "",
+  retailPrice: item.product.retailPrice,
+  wholesalePricing: item.product.wholesalePricing,
+  qty: item.qty,
+  weightG: item.product.weightG,              // ← add
+  hsCode: item.product.hsCode,                // ← add
+  customsDescription: item.product.customsDescription, // ← add
+})
       }
     }
     localStorage.setItem("osx_cart", JSON.stringify(cart));

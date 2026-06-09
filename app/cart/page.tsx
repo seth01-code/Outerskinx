@@ -12,6 +12,9 @@ interface CartItem {
   retailPrice: number
   wholesalePricing: { tier: string; moq: number; price: number }[]
   qty: number
+  weightG?: number
+  hsCode?: string
+  customsDescription?: string
 }
 
 export default function CartPage() {

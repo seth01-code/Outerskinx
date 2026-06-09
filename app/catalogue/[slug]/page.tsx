@@ -23,6 +23,8 @@ interface Product {
   stock: number
   inStock: boolean
   weightG?: number
+  hsCode?: string                        // ← add
+  customsDescription?: string            // ← add
   categories: string[]
   tags: string[]
   wholesalePricing: WholesaleTier[]
@@ -76,14 +78,17 @@ export default function ProductPage({
       cart[existing].qty += qty
     } else {
       cart.push({
-        _id: product._id,
-        sku: product.sku,
-        name: product.name,
-        image: product.images[0] || "",
-        retailPrice: product.retailPrice,
-        wholesalePricing: product.wholesalePricing,
-        qty,
-      })
+  _id: product._id,
+  sku: product.sku,
+  name: product.name,
+  image: product.images[0] || "",
+  retailPrice: product.retailPrice,
+  wholesalePricing: product.wholesalePricing,
+  qty,
+  weightG: product.weightG,              // ← add
+  hsCode: product.hsCode,                // ← add
+  customsDescription: product.customsDescription, // ← add
+})
     }
     localStorage.setItem("osx_cart", JSON.stringify(cart))
     setAdding(false)
