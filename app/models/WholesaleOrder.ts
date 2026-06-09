@@ -21,6 +21,8 @@ export interface IDHLDetails {
   trackingNumber?: string
   labelUrl?: string
   estimatedDelivery?: Date
+  pickupConfirmationNumber?: string
+  pickupCreatedAt?: Date
 }
 
 export interface IWholesaleOrder extends Document {
@@ -90,6 +92,8 @@ const WholesaleOrderSchema = new Schema<IWholesaleOrder>(
       trackingNumber: { type: String },
       labelUrl: { type: String },
       estimatedDelivery: { type: Date },
+      pickupConfirmationNumber: { type: String },
+      pickupCreatedAt: { type: Date },
     },
     poNumber: { type: String },
     poFileUrl: { type: String },
