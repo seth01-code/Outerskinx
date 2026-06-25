@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "../../../lib/auth";
 
-const DHL_BASE_URL = "https://express.api.dhl.com/mydhlapi/test";
+const DHL_BASE_URL = "https://express.api.dhl.com/mydhlapi/";
 
 // Shipper origin — Lagos hub
 const SHIPPER = {
