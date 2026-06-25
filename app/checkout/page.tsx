@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 "use client"
 
 import { useState, useEffect, useRef } from "react"
@@ -30,6 +31,7 @@ interface DhlRate {
   price: number
   currency: string
   estimatedDelivery: string | null
+  priceBreakdown: { name: string; price: number }[]
 }
 
 export default function CheckoutPage() {
@@ -52,6 +54,7 @@ export default function CheckoutPage() {
   const [fetchingRates, setFetchingRates] = useState(false)
   const [ratesFallback, setRatesFallback] = useState(false)
   const [ratesFetched, setRatesFetched] = useState(false)
+  const [expandedBreakdown, setExpandedBreakdown] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -73,6 +76,7 @@ export default function CheckoutPage() {
       setRates([])
       setSelectedRate(null)
       setRatesFallback(false)
+      setExpandedBreakdown(null)
       try {
         const res = await fetch("/api/shipping/rates", {
           method: "POST",
@@ -124,17 +128,16 @@ export default function CheckoutPage() {
     setSubmitting(true)
     try {
       const orderItems = items.map((i) => ({
-  product: i._id,
-  sku: i.sku,
-  name: i.name,
-  qty: i.qty,
-  unitPrice: i.retailPrice,
-  subtotal: i.retailPrice * i.qty,
-  // Passed through in case the product is deleted between cart and checkout
-  weightG: i.weightG,
-  hsCode: i.hsCode,
-  customsDescription: i.customsDescription,
-}))
+        product: i._id,
+        sku: i.sku,
+        name: i.name,
+        qty: i.qty,
+        unitPrice: i.retailPrice,
+        subtotal: i.retailPrice * i.qty,
+        weightG: i.weightG,
+        hsCode: i.hsCode,
+        customsDescription: i.customsDescription,
+      }))
 
       const res = await fetch("/api/orders", {
         method: "POST",
@@ -296,42 +299,126 @@ export default function CheckoutPage() {
                     {rates.map((rate) => {
                       const selected = selectedRate?.productCode === rate.productCode
                       const delivery = formatDelivery(rate.estimatedDelivery)
+                      const isExpanded = expandedBreakdown === rate.productCode
+
                       return (
-                        <label
-                          key={rate.productCode}
-                          className="flex items-start gap-4 p-4 rounded-xl cursor-pointer transition-all"
-                          style={{
-                            border: `1px solid ${selected ? "var(--border-accent)" : "var(--border)"}`,
-                            background: selected ? "var(--brand-green-subtle)" : "var(--surface)",
-                            boxShadow: selected ? "0 0 20px rgba(34,197,94,0.06)" : "none",
-                          }}
-                        >
-                          <input
-                            type="radio"
-                            name="shippingRate"
-                            checked={selected}
-                            onChange={() => setSelectedRate(rate)}
-                            style={{ accentColor: "var(--brand-green)", marginTop: 3 }}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: "0.9rem", letterSpacing: "-0.01em" }}>
-                              {rate.productName}
-                            </p>
-                            {delivery && (
-                              <p style={{ fontSize: "0.75rem", color: "var(--foreground-muted)", fontWeight: 300, marginTop: 2 }}>
-                                Est. delivery: {delivery}
+                        <div key={rate.productCode}>
+                          <label
+                            className="flex items-start gap-4 p-4 rounded-xl cursor-pointer transition-all"
+                            style={{
+                              border: `1px solid ${selected ? "var(--border-accent)" : "var(--border)"}`,
+                              background: selected ? "var(--brand-green-subtle)" : "var(--surface)",
+                              boxShadow: selected ? "0 0 20px rgba(34,197,94,0.06)" : "none",
+                              borderBottomLeftRadius: isExpanded ? 0 : undefined,
+                              borderBottomRightRadius: isExpanded ? 0 : undefined,
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name="shippingRate"
+                              checked={selected}
+                              onChange={() => setSelectedRate(rate)}
+                              style={{ accentColor: "var(--brand-green)", marginTop: 3 }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: "0.9rem", letterSpacing: "-0.01em" }}>
+                                {rate.productName}
                               </p>
-                            )}
-                          </div>
-                          <div className="shrink-0 text-right">
-                            <p style={{ fontFamily: "var(--font-dm-mono)", fontWeight: 600, fontSize: "0.9rem", color: "var(--foreground)" }}>
-                              {rate.currency} {rate.price.toLocaleString()}
-                            </p>
-                            <p style={{ fontSize: "0.65rem", color: "var(--foreground-subtle)", fontFamily: "var(--font-dm-mono)", marginTop: 1 }}>
-                              via DHL
-                            </p>
-                          </div>
-                        </label>
+                              {delivery && (
+                                <p style={{ fontSize: "0.75rem", color: "var(--foreground-muted)", fontWeight: 300, marginTop: 2 }}>
+                                  Est. delivery: {delivery}
+                                </p>
+                              )}
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <p style={{ fontFamily: "var(--font-dm-mono)", fontWeight: 600, fontSize: "0.9rem", color: "var(--foreground)" }}>
+                                {rate.currency} {rate.price.toLocaleString()}
+                              </p>
+                              <p style={{ fontSize: "0.65rem", color: "var(--foreground-subtle)", fontFamily: "var(--font-dm-mono)", marginTop: 1 }}>
+                                via DHL
+                              </p>
+                            </div>
+                          </label>
+
+                          {/* Price breakdown toggle */}
+                          {rate.priceBreakdown?.length > 0 && (
+                            <div
+                              style={{
+                                border: `1px solid ${selected ? "var(--border-accent)" : "var(--border)"}`,
+                                borderTop: "none",
+                                borderBottomLeftRadius: "0.75rem",
+                                borderBottomRightRadius: "0.75rem",
+                                overflow: "hidden",
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => setExpandedBreakdown(isExpanded ? null : rate.productCode)}
+                                className="w-full flex items-center justify-between px-4 py-2 transition-colors"
+                                style={{
+                                  background: "transparent",
+                                  color: "var(--foreground-subtle)",
+                                  fontSize: "0.72rem",
+                                  fontFamily: "var(--font-dm-mono)",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <span>{isExpanded ? "Hide" : "See"} price breakdown</span>
+                                <svg
+                                  width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                  style={{
+                                    transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                                    transition: "transform 0.2s",
+                                  }}
+                                >
+                                  <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                </svg>
+                              </button>
+
+                              {isExpanded && (
+                                <div
+                                  className="px-4 pb-3 space-y-1.5"
+                                  style={{ borderTop: "1px solid var(--border)" }}
+                                >
+                                  {rate.priceBreakdown.map((line, i) => (
+                                    <div key={i} className="flex justify-between items-center">
+                                      <span style={{
+                                        fontSize: "0.75rem",
+                                        color: "var(--foreground-muted)",
+                                        fontWeight: 300,
+                                        paddingTop: i === 0 ? "0.5rem" : 0,
+                                      }}>
+                                        {line.name}
+                                      </span>
+                                      <span style={{
+                                        fontSize: "0.75rem",
+                                        fontFamily: "var(--font-dm-mono)",
+                                        color: "var(--foreground)",
+                                        paddingTop: i === 0 ? "0.5rem" : 0,
+                                      }}>
+                                        {rate.currency} {line.price.toLocaleString()}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  <div
+                                    className="flex justify-between items-center pt-2"
+                                    style={{ borderTop: "1px dashed var(--border)" }}
+                                  >
+                                    <span style={{ fontSize: "0.75rem", color: "var(--foreground-muted)", fontWeight: 500 }}>
+                                      Total (incl. VAT)
+                                    </span>
+                                    <span style={{ fontSize: "0.75rem", fontFamily: "var(--font-dm-mono)", fontWeight: 600, color: "var(--foreground)" }}>
+                                      {rate.currency} {rate.price.toLocaleString()}
+                                    </span>
+                                  </div>
+                                  <p style={{ fontSize: "0.65rem", color: "var(--foreground-subtle)", fontFamily: "var(--font-dm-mono)", paddingTop: 2 }}>
+                                    Includes 7.5% VAT. Fuel surcharge varies monthly.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       )
                     })}
                   </div>

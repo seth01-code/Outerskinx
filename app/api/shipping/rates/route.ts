@@ -55,7 +55,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Tomorrow, formatted as required: 2025-01-15T10:00:00GMT+01:00
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const dateStr = tomorrow.toISOString().split("T")[0];
@@ -74,12 +73,7 @@ export async function POST(req: NextRequest) {
       unitOfMeasurement: "metric",
       isCustomsDeclarable: international,
       nextBusinessDay: true,
-      accounts: [
-        {
-          number: accountNumber,
-          typeCode: "shipper",
-        },
-      ],
+      accounts: [{ number: accountNumber, typeCode: "shipper" }],
       customerDetails: {
         shipperDetails: {
           addressLine1: SHIPPER.addressLine1,
@@ -126,6 +120,7 @@ export async function POST(req: NextRequest) {
     const data = await response.json();
 
     if (!response.ok) {
+      console.error("DHL rates error:", JSON.stringify(data, null, 2));
       return NextResponse.json({
         rates: [],
         fallback: true,
@@ -142,41 +137,48 @@ export async function POST(req: NextRequest) {
         totalPrice: {
           price: number;
           priceCurrency: string;
-          typeCode: string;
+          currencyType: string;
+        }[];
+        detailedPriceBreakdown: {
+          currencyType: string;
+          priceCurrency: string;
+          breakdown: {
+            name: string;
+            price: number;
+            serviceCode?: string;
+          }[];
         }[];
         deliveryCapabilities: { estimatedDeliveryDateAndTime: string };
       }) => {
-        const ngnPrice = product.totalPrice?.find(
-          (p) => p.priceCurrency === "NGN",
+        // Use BILLC (billing currency = NGN) for the total
+        const billc = product.totalPrice?.find(
+          (p) => p.currencyType === "BILLC",
         );
-        const anyPrice = product.totalPrice?.[0];
-        const chosen = ngnPrice || anyPrice;
+        const totalPrice = billc?.price || 0;
+        const currency = billc?.priceCurrency || "NGN";
+
+        // Pull line items from the BILLC detailed breakdown
+        const billcDetail = product.detailedPriceBreakdown?.find(
+          (d) => d.currencyType === "BILLC",
+        );
+        const priceBreakdown = (billcDetail?.breakdown || []).map((item) => ({
+          name: item.name,
+          price: item.price,
+        }));
 
         return {
           productName: product.productName,
           productCode: product.productCode,
-          price: chosen?.price || 0,
-          currency: chosen?.priceCurrency || "NGN",
+          price: totalPrice,
+          currency,
           estimatedDelivery:
             product.deliveryCapabilities?.estimatedDeliveryDateAndTime || null,
-          // --- debug fields ---
-          _debug_totalPriceBreakdown: product.totalPrice,
-          _debug_chosenPriceEntry: chosen,
+          priceBreakdown,
         };
       },
     );
 
-    return NextResponse.json({
-      rates,
-      totalWeightKg: 2,
-      // --- debug fields ---
-      _debug_accountUsed: accountNumber,
-      _debug_envAccountExp: process.env.DHL_ACCOUNT_NUMBER_EXP,
-      _debug_envAccountFallback: process.env.DHL_ACCOUNT_NUMBER,
-      _debug_apiKey: process.env.DHL_API_KEY,
-      _debug_requestSent: requestBody,
-      _debug_dhlRawResponse: data,
-    });
+    return NextResponse.json({ rates, totalWeightKg: 2 });
   } catch (error) {
     console.error("DHL rate error:", error);
     return NextResponse.json({
