@@ -71,6 +71,14 @@ export async function POST(req: NextRequest) {
     const accountNumber =
       process.env.DHL_ACCOUNT_NUMBER_EXP || process.env.DHL_ACCOUNT_NUMBER;
 
+    console.log("DHL account number being used:", accountNumber);
+    console.log(
+      "DHL_ACCOUNT_NUMBER_EXP env:",
+      process.env.DHL_ACCOUNT_NUMBER_EXP,
+    );
+    console.log("DHL_ACCOUNT_NUMBER env:", process.env.DHL_ACCOUNT_NUMBER);
+    console.log("DHL_API_KEY env:", process.env.DHL_API_KEY);
+
     const requestBody = {
       plannedShippingDateAndTime,
       productCode,
@@ -113,11 +121,11 @@ export async function POST(req: NextRequest) {
       ],
     };
 
+    console.log("DHL rates request:", JSON.stringify(requestBody, null, 2));
+
     const credentials = Buffer.from(
       `${process.env.DHL_API_KEY}:${process.env.DHL_API_SECRET}`,
     ).toString("base64");
-
-    console.log("DHL rates request:", JSON.stringify(requestBody, null, 2));
 
     const response = await fetch(`${DHL_BASE_URL}/rates`, {
       method: "POST",
@@ -129,6 +137,8 @@ export async function POST(req: NextRequest) {
     });
 
     const data = await response.json();
+
+    console.log("DHL rates raw response:", JSON.stringify(data, null, 2));
 
     if (!response.ok) {
       console.error("DHL rates error:", JSON.stringify(data, null, 2));
@@ -152,12 +162,22 @@ export async function POST(req: NextRequest) {
         }[];
         deliveryCapabilities: { estimatedDeliveryDateAndTime: string };
       }) => {
+        console.log(
+          `Product [${product.productCode}] totalPrice breakdown:`,
+          JSON.stringify(product.totalPrice, null, 2),
+        );
+
         // Prefer NGN price; fall back to first available
         const ngnPrice = product.totalPrice?.find(
           (p) => p.priceCurrency === "NGN",
         );
         const anyPrice = product.totalPrice?.[0];
         const chosen = ngnPrice || anyPrice;
+
+        console.log(
+          `Product [${product.productCode}] chosen price entry:`,
+          chosen,
+        );
 
         return {
           productName: product.productName,
