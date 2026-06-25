@@ -64,20 +64,9 @@ export async function POST(req: NextRequest) {
     const receiverCountryCode = getCountryCode(deliveryAddress.country || "NG");
     const international = isInternational(receiverCountryCode);
 
-    // Per the DHL doc:
-    // Within NG → productCode: N, account: EXP (shipper)
-    // NG → International → productCode: P (non-doc), account: EXP (shipper)
     const productCode = international ? "P" : "N";
     const accountNumber =
       process.env.DHL_ACCOUNT_NUMBER_EXP || process.env.DHL_ACCOUNT_NUMBER;
-
-    console.log("DHL account number being used:", accountNumber);
-    console.log(
-      "DHL_ACCOUNT_NUMBER_EXP env:",
-      process.env.DHL_ACCOUNT_NUMBER_EXP,
-    );
-    console.log("DHL_ACCOUNT_NUMBER env:", process.env.DHL_ACCOUNT_NUMBER);
-    console.log("DHL_API_KEY env:", process.env.DHL_API_KEY);
 
     const requestBody = {
       plannedShippingDateAndTime,
@@ -121,8 +110,6 @@ export async function POST(req: NextRequest) {
       ],
     };
 
-    console.log("DHL rates request:", JSON.stringify(requestBody, null, 2));
-
     const credentials = Buffer.from(
       `${process.env.DHL_API_KEY}:${process.env.DHL_API_SECRET}`,
     ).toString("base64");
@@ -138,10 +125,7 @@ export async function POST(req: NextRequest) {
 
     const data = await response.json();
 
-    console.log("DHL rates raw response:", JSON.stringify(data, null, 2));
-
     if (!response.ok) {
-      console.error("DHL rates error:", JSON.stringify(data, null, 2));
       return NextResponse.json({
         rates: [],
         fallback: true,
@@ -162,22 +146,11 @@ export async function POST(req: NextRequest) {
         }[];
         deliveryCapabilities: { estimatedDeliveryDateAndTime: string };
       }) => {
-        console.log(
-          `Product [${product.productCode}] totalPrice breakdown:`,
-          JSON.stringify(product.totalPrice, null, 2),
-        );
-
-        // Prefer NGN price; fall back to first available
         const ngnPrice = product.totalPrice?.find(
           (p) => p.priceCurrency === "NGN",
         );
         const anyPrice = product.totalPrice?.[0];
         const chosen = ngnPrice || anyPrice;
-
-        console.log(
-          `Product [${product.productCode}] chosen price entry:`,
-          chosen,
-        );
 
         return {
           productName: product.productName,
@@ -186,11 +159,24 @@ export async function POST(req: NextRequest) {
           currency: chosen?.priceCurrency || "NGN",
           estimatedDelivery:
             product.deliveryCapabilities?.estimatedDeliveryDateAndTime || null,
+          // --- debug fields ---
+          _debug_totalPriceBreakdown: product.totalPrice,
+          _debug_chosenPriceEntry: chosen,
         };
       },
     );
 
-    return NextResponse.json({ rates, totalWeightKg: 2 });
+    return NextResponse.json({
+      rates,
+      totalWeightKg: 2,
+      // --- debug fields ---
+      _debug_accountUsed: accountNumber,
+      _debug_envAccountExp: process.env.DHL_ACCOUNT_NUMBER_EXP,
+      _debug_envAccountFallback: process.env.DHL_ACCOUNT_NUMBER,
+      _debug_apiKey: process.env.DHL_API_KEY,
+      _debug_requestSent: requestBody,
+      _debug_dhlRawResponse: data,
+    });
   } catch (error) {
     console.error("DHL rate error:", error);
     return NextResponse.json({
