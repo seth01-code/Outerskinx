@@ -103,9 +103,11 @@ export async function POST(req: NextRequest) {
         {
           weight: 2, // hardcoded for testing
           dimensions: {
-            length: 30,
-            width: 30,
-            height: 30,
+            // Volumetric weight = (20×15×10)/5000 = 0.6kg
+            // Actual weight (2kg) wins, so DHL bills at 2kg as expected
+            length: 20,
+            width: 15,
+            height: 10,
           },
         },
       ],
